@@ -17,8 +17,11 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(BABELTRACE2 REQUIRED babeltrace2)
+# find_package(PkgConfig REQUIRED)
+# pkg_check_modules(BABELTRACE2 REQUIRED lttng-ust)
+# pkg_check_modules(BABELTRACE2 REQUIRED babeltrace2)
+
+# include_directories(${LTTNG_INCLUDE_DIRS})
 
 add_library(tracker SHARED
   src/tracker.cpp
@@ -36,18 +39,19 @@ ament_target_dependencies(
   std_msgs
 )
 
-add_executable(trace_parser src/trace_parser.cpp)
-target_include_directories(trace_parser PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_definitions(trace_parser PRIVATE RT_EXEC=${RT_EXEC_VAL})
-target_compile_features(trace_parser PUBLIC c_std_99 cxx_std_17)
-ament_target_dependencies(
-  trace_parser
-  rclcpp
-  builtin_interfaces
-  std_msgs
-)
+# add_executable(trace_parser src/trace_parser.cpp)
+# target_include_directories(trace_parser PUBLIC
+#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#   $<INSTALL_INTERFACE:include>)
+# target_compile_definitions(trace_parser PRIVATE RT_EXEC=${RT_EXEC_VAL})
+# target_compile_features(trace_parser PUBLIC c_std_99 cxx_std_17)
+# target_link_libraries(trace_parser ${LTTNG_LIBRARIES})
+# ament_target_dependencies(
+#   trace_parser
+#   rclcpp
+#   builtin_interfaces
+#   std_msgs
+# )
 
 if(BUILD_TESTING)
   # find_package(ament_lint_auto REQUIRED)
@@ -80,7 +84,7 @@ install(EXPORT trackerTargets
 ament_export_targets(trackerTargets HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
 
-install(TARGETS trace_parser
-  DESTINATION lib/${PROJECT_NAME})
+# install(TARGETS trace_parser
+  # DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
