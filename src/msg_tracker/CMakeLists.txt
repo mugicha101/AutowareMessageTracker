@@ -17,7 +17,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(Babeltrace2 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(BABELTRACE2 REQUIRED babeltrace2)
 
 add_library(tracker SHARED
   src/tracker.cpp
@@ -46,7 +47,6 @@ ament_target_dependencies(
   rclcpp
   builtin_interfaces
   std_msgs
-  Babeltrace2
 )
 
 if(BUILD_TESTING)
