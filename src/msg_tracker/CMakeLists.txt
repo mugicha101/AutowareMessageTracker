@@ -17,6 +17,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
+pkg_check_modules(LTTNG_UST REQUIRED lttng-ust)
 # find_package(PkgConfig REQUIRED)
 # pkg_check_modules(BABELTRACE2 REQUIRED lttng-ust)
 # pkg_check_modules(BABELTRACE2 REQUIRED babeltrace2)
@@ -25,6 +26,7 @@ find_package(std_msgs REQUIRED)
 
 add_library(tracker SHARED
   src/tracker.cpp
+  tracepoint_provider.c
 )
 target_include_directories(tracker PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -37,6 +39,7 @@ ament_target_dependencies(
   rclcpp
   builtin_interfaces
   std_msgs
+  LTTNG_UST
 )
 
 # add_executable(trace_parser src/trace_parser.cpp)

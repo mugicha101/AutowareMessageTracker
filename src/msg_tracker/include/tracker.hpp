@@ -9,8 +9,8 @@
 #include <memory>
 #include <deque>
 #include <rmw/types.h>
-#include "tracepoint_provider.h"
-#include <rmw/types.h>
+#include <lttng/tracepoint.h>
+#include "tracker_tp.h"
 #include <string>
 #include <iostream>
 #include <builtin_interfaces/msg/time.hpp>
@@ -68,27 +68,26 @@ class NodeTracker {
   rclcpp::Node::SharedPtr node;
   std::deque<std::pair<rmw_gid_t, const char *>> tracked_pubs; // pub_id, topic name
   std::deque<std::pair<uint32_t, const char *>> tracked_subs; // sub_id, topic name
+  std::shared_ptr<rclcpp::Subscription<std_msgs::msg::Empty>> ui_init_sub;
+
+  inline const char *get_name() const { return node->get_name(); }
 
 public:
 
   NodeTracker(rclcpp::Node::SharedPtr node) : node(node) {
     // ui init callback
-    node->create_subscription<std_msgs::msg::Empty>(
-      "msg_tracker/ui_init",
+    ui_init_sub = node->create_subscription<std_msgs::msg::Empty>(
+      "/msg_tracker/ui_init",
       10,
-      [this](const std_msgs::msg::Empty::SharedPtr msg) {
+      [this](const std_msgs::msg::Empty::SharedPtr) {
         for (auto &[pub_id, topic_name] : tracked_pubs) {
-          // TODO: emit pub_init tracepoint
+          tracepoint(tracker, pub_init, &pub_id, get_name(), topic_name);
         }
         for (auto &[sub_id, topic_name] : tracked_subs) {
-          // TODO: emit sub_init tracepoint
+          tracepoint(tracker, sub_init, sub_id, get_name(), topic_name);
         }
       }
     );
-  }
-
-  inline const char *get_name() const {
-    return node->get_name();
   }
 
   template<typename MsgT>
