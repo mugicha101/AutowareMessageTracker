@@ -5,3 +5,4 @@ log
 .cache
 *.sh
 tmp
+**/__pycache__

@@ -15,6 +15,9 @@
 #include <iostream>
 #include <builtin_interfaces/msg/time.hpp>
 #include <std_msgs/msg/empty.hpp>
+#include <pthread.h>
+
+#define NS_PER_SEC 1000000000
 
 // hashes node/topic name to an int
 constexpr uint32_t id_hash(const char* str) {
@@ -30,7 +33,16 @@ constexpr uint32_t hash_combine(uint32_t seed, uint32_t hash) {
   return seed ^ (hash + 0x9e3779b9 + (seed << 6) + (seed >> 2));
 }
 
-std::string gen_uid(const rmw_gid_t &gid, builtin_interfaces::msg::Time src_stamp);
+inline uint64_t time2int(builtin_interfaces::msg::Time t) {
+  return ((uint64_t)t.sec * NS_PER_SEC) + (uint64_t)t.nanosec;
+}
+
+inline builtin_interfaces::msg::Time int2time(uint64_t t) {
+  builtin_interfaces::msg::Time time;
+  time.sec = t / NS_PER_SEC;
+  time.nanosec = t - time.sec * NS_PER_SEC;
+  return time;
+}
 
 template<typename MsgT>
 class PubTracker {
@@ -41,9 +53,8 @@ public:
 
   const rmw_gid_t pub_id;
 
-  void track_publish(const MsgT &msg) const {
-    std::string uid = gen_uid(pub_id, msg.header.stamp);
-    std::cout << "PUB: " << uid << std::endl;
+  inline void track_publish(const MsgT &msg) const {
+    tracepoint(tracker, publish, &pub_id, time2int(msg.header.stamp), gettid());
   }
 };
 
@@ -56,28 +67,27 @@ public:
 
   const uint32_t sub_id;
 
-  void track_recieve(const MsgT &msg, const rclcpp::MessageInfo &info) const {
-    std::string uid = gen_uid(info.get_rmw_message_info().publisher_gid, msg.header.stamp);
-    std::cout << "SUB: " << uid << std::endl;
+  inline void track_recieve(const MsgT &msg, const rclcpp::MessageInfo &info) const {
+    tracepoint(tracker, recieve, &info.get_rmw_message_info().publisher_gid, sub_id, time2int(msg.header.stamp), gettid());
   }
 };
 
 // tracks a ros2 node and any publisher/subscriber trackers related to it
-// allows UI to trigger pub_init and sub_init tracepoints
+// allows parser to trigger pub_init and sub_init tracepoints
 class NodeTracker {
   rclcpp::Node::SharedPtr node;
   std::deque<std::pair<rmw_gid_t, const char *>> tracked_pubs; // pub_id, topic name
   std::deque<std::pair<uint32_t, const char *>> tracked_subs; // sub_id, topic name
-  std::shared_ptr<rclcpp::Subscription<std_msgs::msg::Empty>> ui_init_sub;
+  std::shared_ptr<rclcpp::Subscription<std_msgs::msg::Empty>> mapping_init_sub;
 
   inline const char *get_name() const { return node->get_name(); }
 
 public:
 
   NodeTracker(rclcpp::Node::SharedPtr node) : node(node) {
-    // ui init callback
-    ui_init_sub = node->create_subscription<std_msgs::msg::Empty>(
-      "/msg_tracker/ui_init",
+    // mapping init callback
+    mapping_init_sub = node->create_subscription<std_msgs::msg::Empty>(
+      "/msg_tracker/mapping_init",
       10,
       [this](const std_msgs::msg::Empty::SharedPtr) {
         for (auto &[pub_id, topic_name] : tracked_pubs) {

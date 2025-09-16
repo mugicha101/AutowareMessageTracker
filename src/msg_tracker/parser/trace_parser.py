@@ -1,27 +1,15 @@
 # script for enabling and processing live lttng events to update latency calculations and UI
 
 #!/usr/bin/env python3
-import bt2
-import subprocess
-import time
-import os
-import sys
-import glob
-import signal
-import rclpy
-import threading
-import socket
-import psutil
-import getpass
-import datetime
-from rclpy.node import Node
-from std_msgs.msg import Empty
-from datetime import datetime
+from imports import *
+from state_tracker import *
+from trace_parser import *
+from event_parsers import *
 
-TRACE_DIR = "tmp/lttng-traces"
 SESSION_NAME = "live_tracker_session"
 PROVIDER_NAME = "tracker"
 TRACEPOINT_NAME = "*"  # or specific tracepoint name
+UPDATE_PERIOD = 100_000 # microseconds between babeltrace updates 
 
 def wait_for_provider(provider_name, timeout=30):
   print(f"[*] Waiting for provider '{provider_name}' to appear...")
@@ -41,25 +29,18 @@ def wait_for_provider(provider_name, timeout=30):
       return False
     time.sleep(0.5)
 
-# def wait_for_first_event_file(trace_dir, timeout=30):
-#   print(f"[*] Waiting for first event file in {trace_dir} to appear...")
-#   start = time.time()
-#   while True:
-#     for root, dirs, files in os.walk(trace_dir):
-#       for f in files:
-#         if f.endswith(".ctf"):  # UST event files have .ctf
-#           return True
-#     if time.time() - start > timeout:
-#       print(f"[!] Timeout waiting for first event file in {trace_dir}.")
-#       return False
-#     time.sleep(0.1)
-
-def create_lttng_session(session_name, trace_dir, provider_name, tracepoint_name):
-  remove_existing_session(SESSION_NAME)
+def create_lttng_session(session_name, provider_name, tracepoint_name):
   assert(wait_for_provider(PROVIDER_NAME))
 
   print(f"[*] Creating LTTng session {session_name}...")
-  subprocess.run(["lttng", "create", session_name, "--live"], check=True)
+  while True:
+    cleanup_session(SESSION_NAME)
+    res = subprocess.run(["lttng", "create", session_name, f"--live={UPDATE_PERIOD}"])
+    if res.returncode == 0:
+      break
+    print("[!] LTTNG Create Failed, retrying...")
+    time.sleep(0.5)
+
   subprocess.run(["lttng", "enable-event", "-u", f"{provider_name}:{tracepoint_name}"], check=True)
   subprocess.run(["lttng", "start"], check=True)
   print(f"[*] LTTng session {session_name} started.")
@@ -72,53 +53,37 @@ def cleanup_session(session_name):
   subprocess.run(["lttng", "destroy"])
   print(f"[*] Session {session_name} cleaned up.")
 
-  # wait a bit before creating again to prevent error
-  time.sleep(0.5)
-
-def remove_existing_session(session_name):
-  # List existing sessions
-  result = subprocess.run(
-    ["lttng", "list", "sessions"],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True,
-  )
-  if session_name in result.stdout:
-    print(f"[*] Session '{session_name}' already exists. Destroying it...")
-    cleanup_session(session_name)
-  else:
-    print(f"[*] Session '{session_name}' does not exist. Continuing...")
-
-def ui_node_thread():
+def mapping_node_thread():
   rclpy.init()
-  ui_node = rclpy.create_node("ui_node")
-  ui_init_topic = "/msg_tracker/ui_init"
-  ui_init_pub = ui_node.create_publisher(Empty, ui_init_topic, 10)
+  mapping_node = rclpy.create_node("mapping_node")
+  mapping_init_topic = "/msg_tracker/mapping_init"
+  mapping_init_pub = mapping_node.create_publisher(Empty, mapping_init_topic, 10)
 
+  timer = None
   def timer_callback():
-    ui_init_pub.publish(Empty())
-    print(f"[*] Published to {ui_init_topic}.")
-  ui_node.create_timer(1.0, timer_callback)
+    if timer is not None and StateTracker.global_tracker is not None and StateTracker.global_tracker.mapping_init_done:
+      timer.cancel() # TODO: handle new nodes entering system (maybe just keep the timer running)
+    mapping_init_pub.publish(Empty())
+    print(f"[*] Published to {mapping_init_topic}.")
+  timer = mapping_node.create_timer(1.0, timer_callback)
 
   try:
-    rclpy.spin(ui_node)
+    rclpy.spin(mapping_node)
   except:
     pass
   finally:
-    ui_node.destroy_node()
+    mapping_node.destroy_node()
     try:
       rclpy.shutdown()
     except:
       pass
 
-def launch_ui_node():
+def launch_mapping_node():
   print("[*] Launching UI Node...")
-  thread = threading.Thread(target=ui_node_thread)
+  thread = threading.Thread(target=mapping_node_thread)
   thread.start()
 
 def read_tracepoints():
-  # wait_for_first_event_file(TRACE_DIR)
-
   # Connect to live session using lttng-live plugin
   uri = f"net://localhost/host/{socket.gethostname()}/{SESSION_NAME}"
 
@@ -134,18 +99,16 @@ def read_tracepoints():
   # event loop
   # again taken from https://github.com/ros2/ros2_tracing/issues/149
   print("[*] Reading tracepoints...")
+  StateTracker.global_tracker = StateTracker()
   while True:
     try:
       for msg in src:
         if type(msg) is bt2._EventMessageConst:
           event = msg.event
           timestamp = msg.default_clock_snapshot.ns_from_origin
-          handle_event(event, timestamp)
+          parse_trace_event_message(msg)
     except bt2.TryAgain:
       pass
-
-def handle_event(event, timestamp):
-  print(f"[EVENT] {event.name} @ {datetime.fromtimestamp(timestamp / 1e9)}")
 
 def setup_lttng():
   # spawn relay daemon if none exist already
@@ -200,8 +163,8 @@ def setup_lttng():
 if __name__ == "__main__":
   try:
     setup_lttng()
-    launch_ui_node()
-    create_lttng_session(SESSION_NAME, TRACE_DIR, PROVIDER_NAME, TRACEPOINT_NAME)
+    launch_mapping_node()
+    create_lttng_session(SESSION_NAME, PROVIDER_NAME, TRACEPOINT_NAME)
     read_tracepoints()
   except KeyboardInterrupt:
     print("\n[*] Interrupted by user.")
