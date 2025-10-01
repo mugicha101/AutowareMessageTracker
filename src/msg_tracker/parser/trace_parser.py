@@ -104,14 +104,12 @@ def read_tracepoints():
     try:
       for msg in src:
         if type(msg) is bt2._EventMessageConst:
-          event = msg.event
-          timestamp = msg.default_clock_snapshot.ns_from_origin
           parse_trace_event_message(msg)
     except bt2.TryAgain:
       pass
 
 def setup_lttng():
-  # spawn relay daemon if none exist already
+  # spawn relay daemon if none exist already (TODO: sometimes need to kill them if tracing stops working)
   try:
     result = subprocess.run(["pidof", "lttng-relayd"], capture_output=True, text=True)
     pids = [int(pid) for pid in result.stdout.strip().split()]

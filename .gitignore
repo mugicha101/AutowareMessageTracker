@@ -6,3 +6,4 @@ log
 *.sh
 tmp
 **/__pycache__
+*.txt

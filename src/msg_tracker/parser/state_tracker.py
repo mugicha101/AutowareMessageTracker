@@ -2,6 +2,7 @@ from imports import *
 from node_graph import *
 
 INF = 10000000000
+MAX_LATENCY_NS = 5 * 100000000 # max time to hold in transit messages for (in ns)
 
 class DataDistr:
   def __init__(self):
@@ -43,6 +44,29 @@ class NodeState(EntityState):
 class TopicState(EntityState):
   def __init__(self, name):
     super().__init__(name)
+    self.sent_msg_pub_id: dict[int,int] = {} # stamp -> pub_id for messages in transit
+    self.sent_msg_recieved: dict[int,int] = {} # stamp -> recieved
+    self.sent_msgs: deque[tuple[int,int,int]] = deque() # list (pub_time, pub_id, stamp), assumes recieved in pub_time order
+
+  def add_msg(self, pub_time, pub_id, stamp):
+    # delete messages older than MAX_LATENCY
+    while len(self.sent_msgs) > 0 and self.sent_msgs[0][0] + MAX_LATENCY_NS > pub_time:
+      if not self.sent_msg_recieved[self.sent_msgs[0][2]]:
+        print(f"WARNING - message never recieved: pub_time={self.sent_msgs[0][0]}, pub_id={self.sent_msgs[0][1]}, stamp={self.sent_msgs[0][2]}")
+      del self.sent_msg_pub_id[self.sent_msgs[0][2]]
+      del self.sent_msg_recieved[self.sent_msgs[0][2]]
+      self.sent_msgs.popleft()
+    self.sent_msg_pub_id[stamp] = pub_id
+    self.sent_msg_recieved[stamp] = False
+    self.sent_msgs.append((pub_time, pub_id, stamp))
+
+  def find_msg_pub_id(self, stamp):
+    pub_id = self.sent_msg_pub_id.get(stamp)
+    if pub_id is None:
+      return None
+    
+    self.sent_msg_recieved[stamp] = True
+    return pub_id
 
 class PortState:
   def __init__(self):
@@ -56,12 +80,14 @@ class PubSubPair:
     self.latencies = DataDistr()
 
 class PubState(PortState):
-  def __init__(self):
+  def __init__(self, pub_id):
     super().__init__()
+    self.pub_id = pub_id
 
 class SubState(PortState):
-  def __init__(self):
+  def __init__(self, sub_id):
     super().__init__()
+    self.sub_id = sub_id
 
 class StateTracker:
   global_tracker: "StateTracker" = None
@@ -73,8 +99,8 @@ class StateTracker:
     self.msg_map: dict[tuple[int,int], MessageState] = {}
     self.node_map: dict[str,NodeState] = {}
     self.topic_map: dict[str,TopicState] = {}
-    self.pub_map: dict[int,PubState] = defaultdict(lambda : PubState())
-    self.sub_map: dict[int,PubState] = defaultdict(lambda : SubState())
+    self.pub_map: dict[int,PubState] = {}
+    self.sub_map: dict[int,PubState] = {}
     self.pair_map: dict[tuple[int,int],PubSubPair] = {}
     self.anal_queue: deque[tuple[int,int]] = deque() # recieved messages that haven't been analyzed
     self.ui_graph = GraphUI()
@@ -89,16 +115,30 @@ class StateTracker:
     return self.cb_map[cb_tid]
   
   # create a message state for a new message (error if already exists)
+  # also puts on topic
   def get_new_msg(self, pub_id: int, stamp):
     id = (pub_id, stamp)
     assert(id not in self.msg_map)
     msg = MessageState(*id)
     self.msg_map[id] = msg
+    self.get_topic(self.get_pub(pub_id).topic).add_msg(self.time, pub_id, stamp)
     return msg
+  
+  # figure out recieved msg's pub_id from sub_id, stamp
+  def find_recv_msg_pub_id(self, sub_id, stamp):
+    return self.get_topic(self.get_sub(sub_id).topic).find_msg_pub_id(stamp)
+  
+  # maps subscriber's publisher id to original publisher id
+  # if they already match, does nothing
+  def add_pub_id_alias(self, canonical_pub_id, alias_pub_id):
+    if alias_pub_id in self.pub_map:
+      return
+    
+    self.pub_map[alias_pub_id] = self.pub_map[canonical_pub_id]
 
   # get an existing message (None if doesn't exist)
   def get_msg(self, pub_id: int, stamp):
-    id = (pub_id, stamp)
+    id = (self.get_pub(pub_id).pub_id, stamp)
     return self.msg_map.get(id)
   
   # get node state (creates if none exists)
@@ -116,10 +156,14 @@ class StateTracker:
 
   # get publisher state (create if none exists)
   def get_pub(self, pub_id: int):
+    if pub_id not in self.pub_map:
+      self.pub_map[pub_id] = PubState(pub_id)
     return self.pub_map[pub_id]
   
   # get subscriber state (create if none exists)
   def get_sub(self, sub_id: int):
+    if sub_id not in self.sub_map:
+      self.sub_map[sub_id] = SubState(sub_id)
     return self.sub_map[sub_id]
   
   # get pubsub pair (create if none exists)
@@ -153,22 +197,12 @@ class StateTracker:
     topic.outgoing.add(sub_id)
   
   def add_recieved_msg(self, pub_id, stamp):
-    self.anal_queue.append((pub_id, stamp))
-    self.analyze()
-  
-  # consume analysis queue to update analysis
-  # requires all nodes to be known (via sub_init and pub_init)
-  def analyze(self):
-    if not self.mapping_init_done:
-      return
-    
-    while len(self.anal_queue) > 0:
-      pub_id, stamp = self.anal_queue.popleft()
-      msg = self.get_msg(pub_id, stamp)
-      pair = self.get_pair(pub_id, msg.sub_id)
-      lat = pair.latencies
-      lat.add_point(msg.rec_time - msg.pub_time)
-      pub = self.get_pub(pub_id)
-      sub = self.get_sub(msg.sub_id)
-      self.ui_graph.set_edge(pub.node, sub.node, f"{pub.topic}: [{lat.min_val},{lat.avg_val},{lat.max_val}]ns")
-      print(f"MSG {msg.rec_time - msg.pub_time}")
+    pub = self.get_pub(pub_id)
+    pub_id = pub.pub_id
+    msg = self.get_msg(pub_id, stamp)
+    sub = self.get_sub(msg.sub_id)
+    pair = self.get_pair(pub_id, msg.sub_id)
+    lat = pair.latencies
+    lat.add_point(msg.rec_time - msg.pub_time)
+    self.ui_graph.set_edge(pub.node, sub.node, f"{pub.topic}: [{lat.min_val},{lat.avg_val},{lat.max_val}]ns")
+    print(f"MSG {msg.rec_time - msg.pub_time} NMSG: {len(self.msg_map)}")

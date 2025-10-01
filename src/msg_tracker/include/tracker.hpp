@@ -1,5 +1,6 @@
 // classes for tracker objects added to tracked autoware nodes
 // design of tracking system: https://docs.google.com/drawings/d/1Gz49K65o4oCqNO7q4g0ol7-B9UKv9zTaE9zuxvcE7sU/edit?usp=sharing
+// warning: without lttng-ust-fork (doesnt seem to exist on Ubuntu), use of fork() breaks tracepoint emissions
 
 #pragma once
 
@@ -8,33 +9,33 @@
 #include <cstddef>
 #include <memory>
 #include <deque>
-#include <rmw/types.h>
 #include <lttng/tracepoint.h>
 #include "tracker_tp.h"
 #include <string>
 #include <iostream>
 #include <builtin_interfaces/msg/time.hpp>
 #include <std_msgs/msg/empty.hpp>
+#include <rmw/types.h>
 #include <pthread.h>
 
 #define NS_PER_SEC 1000000000
 
 // hashes node/topic name to an int
-constexpr uint32_t id_hash(const char* str) {
-    uint32_t hash = 2166136261u;
-    for (size_t i = 0; str[i] != '\0'; ++i) {
-        hash ^= static_cast<uint32_t>(str[i]);
-        hash *= 16777619u;
-    }
-    return hash;
+uint64_t id_hash(const char* str) {
+    std::hash<std::string> hash;
+    return hash(std::string(str));
 }
 
-constexpr uint32_t hash_combine(uint32_t seed, uint32_t hash) {
-  return seed ^ (hash + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+uint64_t hash_combine(uint64_t a, uint64_t b) {
+  return a ^ (b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2));
 }
 
 inline uint64_t time2int(builtin_interfaces::msg::Time t) {
   return ((uint64_t)t.sec * NS_PER_SEC) + (uint64_t)t.nanosec;
+}
+
+inline uint64_t time2int(rmw_time_t t) {
+  return ((uint64_t)t.sec * NS_PER_SEC) + (uint64_t)t.nsec;
 }
 
 inline builtin_interfaces::msg::Time int2time(uint64_t t) {
@@ -54,6 +55,12 @@ public:
   const rmw_gid_t pub_id;
 
   inline void track_publish(const MsgT &msg) const {
+    printf("MESSAGE PUBLISHED stamp=%llu addr=%.016x\n", time2int(msg.header.stamp), (uint64_t)(&msg));
+    printf("publisher_gid.data: ", pub_id.implementation_identifier);
+    for (uint8_t v : pub_id.data) {
+      printf("%x ", v);
+    }
+    printf("\n");
     tracepoint(tracker, publish, &pub_id, time2int(msg.header.stamp), gettid());
   }
 };
@@ -65,9 +72,16 @@ class SubTracker {
 
 public:
 
-  const uint32_t sub_id;
+  const uint64_t sub_id;
 
   inline void track_recieve(const MsgT &msg, const rclcpp::MessageInfo &info) const {
+    auto rmw_info = info.get_rmw_message_info();
+    printf("MESSAGE RECIEVED stamp=%llu addr=%.016x\n", time2int(msg.header.stamp), (uint64_t)(&msg));
+    printf("from_intra_process: %d\npublication_sequence_num: %llu\nreception_sequence_number: %llu\npublisher_gid.implementation_identifier: %s\npublisher_gid.data: ", rmw_info.from_intra_process, rmw_info.publication_sequence_number, rmw_info.reception_sequence_number, rmw_info.publisher_gid.implementation_identifier);
+    for (uint8_t v : rmw_info.publisher_gid.data) {
+      printf("%x ", v);
+    }
+    printf("\nsource_timestamp: %llu\nreceived_timestamp: %llu\n", rmw_info.source_timestamp, rmw_info.received_timestamp);
     tracepoint(tracker, recieve, &info.get_rmw_message_info().publisher_gid, sub_id, time2int(msg.header.stamp), gettid());
   }
 };
@@ -76,8 +90,8 @@ public:
 // allows parser to trigger pub_init and sub_init tracepoints
 class NodeTracker {
   rclcpp::Node::SharedPtr node;
-  std::deque<std::pair<rmw_gid_t, const char *>> tracked_pubs; // pub_id, topic name
-  std::deque<std::pair<uint32_t, const char *>> tracked_subs; // sub_id, topic name
+  std::deque<std::pair<rmw_gid_t, std::string>> tracked_pubs; // pub_id, topic name
+  std::deque<std::pair<uint64_t, std::string>> tracked_subs; // sub_id, topic name
   std::shared_ptr<rclcpp::Subscription<std_msgs::msg::Empty>> mapping_init_sub;
 
   inline const char *get_name() const { return node->get_name(); }
@@ -91,10 +105,10 @@ public:
       10,
       [this](const std_msgs::msg::Empty::SharedPtr) {
         for (auto &[pub_id, topic_name] : tracked_pubs) {
-          tracepoint(tracker, pub_init, &pub_id, get_name(), topic_name);
+          tracepoint(tracker, pub_init, &pub_id, get_name(), topic_name.c_str());
         }
         for (auto &[sub_id, topic_name] : tracked_subs) {
-          tracepoint(tracker, sub_init, sub_id, get_name(), topic_name);
+          tracepoint(tracker, sub_init, sub_id, get_name(), topic_name.c_str());
         }
       }
     );

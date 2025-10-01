@@ -24,9 +24,9 @@ TRACEPOINT_EVENT(
 TRACEPOINT_EVENT(
     tracker,
     sub_init,
-    TP_ARGS(uint32_t, sub_id, const char *, node, const char *, topic),
+    TP_ARGS(uint64_t, sub_id, const char *, node, const char *, topic),
     TP_FIELDS(
-        ctf_integer(uint32_t, sub_id, sub_id)
+        ctf_integer(uint64_t, sub_id, sub_id)
         ctf_string(node, node)
         ctf_string(topic, topic)
     )
@@ -46,10 +46,10 @@ TRACEPOINT_EVENT(
 TRACEPOINT_EVENT(
     tracker,
     recieve,
-    TP_ARGS(const rmw_gid_t *, pub_id, uint32_t, sub_id, uint64_t, stamp, __pid_t, cb_tid),
+    TP_ARGS(const rmw_gid_t *, pub_id, uint64_t, sub_id, uint64_t, stamp, __pid_t, cb_tid),
     TP_FIELDS(
         ctf_array(uint8_t, pub_id, pub_id->data, RMW_GID_STORAGE_SIZE)
-        ctf_integer(uint32_t, sub_id, sub_id)
+        ctf_integer(uint64_t, sub_id, sub_id)
         ctf_integer(uint64_t, stamp, stamp)
         ctf_integer(__pid_t, cb_tid, cb_tid)
     )
