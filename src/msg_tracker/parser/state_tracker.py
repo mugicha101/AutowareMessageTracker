@@ -23,9 +23,9 @@ class CallbackState:
     self.direct_link_src = None
 
 class MessageState:
-  def __init__(self, pub_id, stamp):
+  def __init__(self, pub_id, seq_num):
     self.pub_id = pub_id
-    self.stamp = stamp
+    self.seq_num = seq_num
     self.sub_id = None
     self.pub_time = None
     self.rec_time = None
@@ -44,28 +44,28 @@ class NodeState(EntityState):
 class TopicState(EntityState):
   def __init__(self, name):
     super().__init__(name)
-    self.sent_msg_pub_id: dict[int,int] = {} # stamp -> pub_id for messages in transit
-    self.sent_msg_recieved: dict[int,int] = {} # stamp -> recieved
-    self.sent_msgs: deque[tuple[int,int,int]] = deque() # list (pub_time, pub_id, stamp), assumes recieved in pub_time order
+    self.sent_msg_pub_id: dict[int,int] = {} # seq_num -> pub_id for messages in transit
+    self.sent_msg_recieved: dict[int,int] = {} # seq_num -> recieved
+    self.sent_msgs: deque[tuple[int,int,int]] = deque() # list (pub_time, pub_id, seq_num), assumes recieved in pub_time order
 
-  def add_msg(self, pub_time, pub_id, stamp):
+  def add_msg(self, pub_time, pub_id, seq_num):
     # delete messages older than MAX_LATENCY
     while len(self.sent_msgs) > 0 and self.sent_msgs[0][0] + MAX_LATENCY_NS > pub_time:
       if not self.sent_msg_recieved[self.sent_msgs[0][2]]:
-        print(f"WARNING - message never recieved: pub_time={self.sent_msgs[0][0]}, pub_id={self.sent_msgs[0][1]}, stamp={self.sent_msgs[0][2]}")
+        print(f"WARNING - message never recieved: pub_time={self.sent_msgs[0][0]}, pub_id={self.sent_msgs[0][1]}, seq_num={self.sent_msgs[0][2]}")
       del self.sent_msg_pub_id[self.sent_msgs[0][2]]
       del self.sent_msg_recieved[self.sent_msgs[0][2]]
       self.sent_msgs.popleft()
-    self.sent_msg_pub_id[stamp] = pub_id
-    self.sent_msg_recieved[stamp] = False
-    self.sent_msgs.append((pub_time, pub_id, stamp))
+    self.sent_msg_pub_id[seq_num] = pub_id
+    self.sent_msg_recieved[seq_num] = False
+    self.sent_msgs.append((pub_time, pub_id, seq_num))
 
-  def find_msg_pub_id(self, stamp):
-    pub_id = self.sent_msg_pub_id.get(stamp)
+  def find_msg_pub_id(self, seq_num):
+    pub_id = self.sent_msg_pub_id.get(seq_num)
     if pub_id is None:
       return None
     
-    self.sent_msg_recieved[stamp] = True
+    self.sent_msg_recieved[seq_num] = True
     return pub_id
 
 class PortState:
@@ -116,17 +116,17 @@ class StateTracker:
   
   # create a message state for a new message (error if already exists)
   # also puts on topic
-  def get_new_msg(self, pub_id: int, stamp):
-    id = (pub_id, stamp)
+  def get_new_msg(self, pub_id: int, seq_num):
+    id = (pub_id, seq_num)
     assert(id not in self.msg_map)
     msg = MessageState(*id)
     self.msg_map[id] = msg
-    self.get_topic(self.get_pub(pub_id).topic).add_msg(self.time, pub_id, stamp)
+    self.get_topic(self.get_pub(pub_id).topic).add_msg(self.time, pub_id, seq_num)
     return msg
   
-  # figure out recieved msg's pub_id from sub_id, stamp
-  def find_recv_msg_pub_id(self, sub_id, stamp):
-    return self.get_topic(self.get_sub(sub_id).topic).find_msg_pub_id(stamp)
+  # figure out recieved msg's pub_id from sub_id, seq_num
+  def find_recv_msg_pub_id(self, sub_id, seq_num):
+    return self.get_topic(self.get_sub(sub_id).topic).find_msg_pub_id(seq_num)
   
   # maps subscriber's publisher id to original publisher id
   # if they already match, does nothing
@@ -137,8 +137,8 @@ class StateTracker:
     self.pub_map[alias_pub_id] = self.pub_map[canonical_pub_id]
 
   # get an existing message (None if doesn't exist)
-  def get_msg(self, pub_id: int, stamp):
-    id = (self.get_pub(pub_id).pub_id, stamp)
+  def get_msg(self, pub_id: int, seq_num):
+    id = (self.get_pub(pub_id).pub_id, seq_num)
     return self.msg_map.get(id)
   
   # get node state (creates if none exists)
@@ -196,10 +196,10 @@ class StateTracker:
     topic = self.get_topic(topic_name)
     topic.outgoing.add(sub_id)
   
-  def add_recieved_msg(self, pub_id, stamp):
+  def add_recieved_msg(self, pub_id, seq_num):
     pub = self.get_pub(pub_id)
     pub_id = pub.pub_id
-    msg = self.get_msg(pub_id, stamp)
+    msg = self.get_msg(pub_id, seq_num)
     sub = self.get_sub(msg.sub_id)
     pair = self.get_pair(pub_id, msg.sub_id)
     lat = pair.latencies

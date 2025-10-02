@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <cstdint>
 #include <cstddef>
@@ -53,15 +54,17 @@ class PubTracker {
 public:
 
   const rmw_gid_t pub_id;
+  std::atomic<uint64_t> seq_num = 1; // should be synced with publisher's next publication sequence number
 
-  inline void track_publish(const MsgT &msg) const {
-    printf("MESSAGE PUBLISHED stamp=%llu addr=%.016x\n", time2int(msg.header.stamp), (uint64_t)(&msg));
+  inline void track_publish(const MsgT &msg) {
+    uint64_t msg_seq_num = seq_num++;
+    printf("MESSAGE PUBLISHED seq_num=%llu addr=%.016x\n", msg_seq_num, (uint64_t)(&msg));
     printf("publisher_gid.data: ", pub_id.implementation_identifier);
     for (uint8_t v : pub_id.data) {
       printf("%x ", v);
     }
     printf("\n");
-    tracepoint(tracker, publish, &pub_id, time2int(msg.header.stamp), gettid());
+    tracepoint(tracker, publish, &pub_id, msg_seq_num, gettid());
   }
 };
 
@@ -76,13 +79,13 @@ public:
 
   inline void track_recieve(const MsgT &msg, const rclcpp::MessageInfo &info) const {
     auto rmw_info = info.get_rmw_message_info();
-    printf("MESSAGE RECIEVED stamp=%llu addr=%.016x\n", time2int(msg.header.stamp), (uint64_t)(&msg));
+    printf("MESSAGE RECIEVED seq_num=%llu addr=%.016x\n", rmw_info.publication_sequence_number, (uint64_t)(&msg));
     printf("from_intra_process: %d\npublication_sequence_num: %llu\nreception_sequence_number: %llu\npublisher_gid.implementation_identifier: %s\npublisher_gid.data: ", rmw_info.from_intra_process, rmw_info.publication_sequence_number, rmw_info.reception_sequence_number, rmw_info.publisher_gid.implementation_identifier);
     for (uint8_t v : rmw_info.publisher_gid.data) {
       printf("%x ", v);
     }
     printf("\nsource_timestamp: %llu\nreceived_timestamp: %llu\n", rmw_info.source_timestamp, rmw_info.received_timestamp);
-    tracepoint(tracker, recieve, &info.get_rmw_message_info().publisher_gid, sub_id, time2int(msg.header.stamp), gettid());
+    tracepoint(tracker, recieve, &info.get_rmw_message_info().publisher_gid, sub_id, rmw_info.publication_sequence_number, gettid());
   }
 };
 

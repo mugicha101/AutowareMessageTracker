@@ -35,10 +35,10 @@ TRACEPOINT_EVENT(
 TRACEPOINT_EVENT(
     tracker,
     publish,
-    TP_ARGS(const rmw_gid_t *, pub_id, uint64_t, stamp, __pid_t, cb_tid),
+    TP_ARGS(const rmw_gid_t *, pub_id, uint64_t, seq_num, __pid_t, cb_tid),
     TP_FIELDS(
         ctf_array(uint8_t, pub_id, pub_id->data, RMW_GID_STORAGE_SIZE)
-        ctf_integer(uint64_t, stamp, stamp)
+        ctf_integer(uint64_t, seq_num, seq_num)
         ctf_integer(__pid_t, cb_tid, cb_tid)
     )
 )
@@ -46,11 +46,11 @@ TRACEPOINT_EVENT(
 TRACEPOINT_EVENT(
     tracker,
     recieve,
-    TP_ARGS(const rmw_gid_t *, pub_id, uint64_t, sub_id, uint64_t, stamp, __pid_t, cb_tid),
+    TP_ARGS(const rmw_gid_t *, pub_id, uint64_t, sub_id, uint64_t, seq_num, __pid_t, cb_tid),
     TP_FIELDS(
         ctf_array(uint8_t, pub_id, pub_id->data, RMW_GID_STORAGE_SIZE)
         ctf_integer(uint64_t, sub_id, sub_id)
-        ctf_integer(uint64_t, stamp, stamp)
+        ctf_integer(uint64_t, seq_num, seq_num)
         ctf_integer(__pid_t, cb_tid, cb_tid)
     )
 )
@@ -67,12 +67,12 @@ TRACEPOINT_EVENT(
 TRACEPOINT_EVENT(
     tracker,
     indirect_link,
-    TP_ARGS(const rmw_gid_t *, prev_pub_id, uint64_t, prev_stamp, const rmw_gid_t *, next_pub_id, uint64_t, next_stamp, __pid_t, cb_tid),
+    TP_ARGS(const rmw_gid_t *, prev_pub_id, uint64_t, prev_seq_num, const rmw_gid_t *, next_pub_id, uint64_t, next_seq_num, __pid_t, cb_tid),
     TP_FIELDS(
         ctf_array(uint8_t, prev_pub_id, prev_pub_id->data, RMW_GID_STORAGE_SIZE)
-        ctf_integer(uint64_t, prev_stamp, prev_stamp)
+        ctf_integer(uint64_t, prev_seq_num, prev_seq_num)
         ctf_array(uint8_t, next_pub_id, next_pub_id->data, RMW_GID_STORAGE_SIZE)
-        ctf_integer(uint64_t, next_stamp, next_stamp)
+        ctf_integer(uint64_t, next_seq_num, next_seq_num)
         ctf_integer(__pid_t, cb_tid, cb_tid)
     )
 )

@@ -52,14 +52,14 @@ def publish(event: TraceEvent):
 
   cb_tid = int(event["cb_tid"])
   pub_id = norm_pub_id(event["pub_id"])
-  stamp = int(event["stamp"])
+  seq_num = int(event["seq_num"])
   cb = tracker.get_cb(cb_tid)
-  if (pub_id, stamp) in tracker.msg_map:
+  if (pub_id, seq_num) in tracker.msg_map:
     # indirect link
-    msg = tracker.get_msg(pub_id, stamp)
+    msg = tracker.get_msg(pub_id, seq_num)
   else:
     # direct link
-    msg = tracker.get_new_msg(pub_id, stamp)
+    msg = tracker.get_new_msg(pub_id, seq_num)
     msg.parent = cb.direct_link_src
   msg.pub_time = tracker.time
 
@@ -70,19 +70,19 @@ def recieve(event: TraceEvent):
     return
   
   cb_tid = int(event["cb_tid"])
-  stamp = int(event["stamp"])
+  seq_num = int(event["seq_num"])
   sub_id = int(event["sub_id"])
   sub_pub_id = norm_pub_id(event["pub_id"])
   cb = tracker.get_cb(cb_tid)
-  pub_id = tracker.find_recv_msg_pub_id(sub_id, stamp - 1)
+  pub_id = tracker.find_recv_msg_pub_id(sub_id, seq_num)
   tracker.add_pub_id_alias(pub_id, sub_pub_id)
-  msg = tracker.get_msg(pub_id, stamp - 1)
+  msg = tracker.get_msg(pub_id, seq_num)
   msg.rec_time = tracker.time
   msg.sub_id = sub_id
-  tracker.add_recieved_msg(msg.pub_id, msg.stamp)
+  tracker.add_recieved_msg(msg.pub_id, msg.seq_num)
 
   # msg can be None if publish not captured in which case treat direct links from message as root messages
-  cb.direct_link_src = (msg.pub_id, msg.stamp)
+  cb.direct_link_src = (msg.pub_id, msg.seq_num)
 
 @trace_event_parser("tracker:no_recieve")
 def no_recieve(event: TraceEvent):
@@ -101,10 +101,10 @@ def indirect_link(event: TraceEvent):
     return
   
   prev_pub_id = norm_pub_id(event["prev_pub_id"])
-  prev_stamp = int(event["prev_stamp"])
+  prev_seq_num = int(event["prev_seq_num"])
   next_pub_id = norm_pub_id(event["next_pub_id"])
-  next_stamp = int(event["next_stamp"])
-  prev_msg = tracker.get_msg(prev_pub_id, prev_stamp)
-  next_msg = tracker.get_new_msg(next_pub_id, next_stamp)
+  next_seq_num = int(event["next_seq_num"])
+  prev_msg = tracker.get_msg(prev_pub_id, prev_seq_num)
+  next_msg = tracker.get_new_msg(next_pub_id, next_seq_num)
   next_msg.parent = prev_msg
   
