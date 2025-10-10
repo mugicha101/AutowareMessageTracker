@@ -45,7 +45,7 @@ TRACEPOINT_EVENT(
 
 TRACEPOINT_EVENT(
     tracker,
-    recieve,
+    receive,
     TP_ARGS(const rmw_gid_t *, pub_id, uint64_t, sub_id, uint64_t, seq_num, __pid_t, cb_tid),
     TP_FIELDS(
         ctf_array(uint8_t, pub_id, pub_id->data, RMW_GID_STORAGE_SIZE)
@@ -57,7 +57,7 @@ TRACEPOINT_EVENT(
 
 TRACEPOINT_EVENT(
     tracker,
-    no_recieve,
+    no_receive,
     TP_ARGS(__pid_t, cb_tid),
     TP_FIELDS(
         ctf_integer(__pid_t, cb_tid, cb_tid)

@@ -10,11 +10,11 @@ def parse_trace_event_message(msg: TraceEventMessage) -> Any:
   event = msg.event
   timestamp = msg.default_clock_snapshot.ns_from_origin
   field_str = "\n    " + "\n    ".join(f"{field}: {utf8(event[field])}" for field in event.payload_field)
-  # print(f"[EVENT {utf8(datetime.fromtimestamp(timestamp / 1e9))} {utf8(event.name)}]{field_str}")
+  print(f"[EVENT {utf8(datetime.fromtimestamp(timestamp / 1e9))} {utf8(event.name)}]{field_str}")
   StateTracker.global_tracker.set_time(timestamp)
   name = event.name
-  ret = parser_map[name](event) if name in parser_map else None
-  return ret
+  # ret = parser_map[name](event) if name in parser_map else None
+  # return ret
 
 def trace_event_parser(name):
   def decorator(func):

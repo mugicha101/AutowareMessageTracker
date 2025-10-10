@@ -25,7 +25,6 @@ pkg_check_modules(LTTNG_UST REQUIRED lttng-ust)
 # include_directories(${LTTNG_INCLUDE_DIRS})
 
 add_library(tracker SHARED
-  src/tracker.cpp
   tracepoint_provider.c
 )
 target_include_directories(tracker PUBLIC

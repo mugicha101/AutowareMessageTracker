@@ -45,19 +45,19 @@ class TopicState(EntityState):
   def __init__(self, name):
     super().__init__(name)
     self.sent_msg_pub_id: dict[int,int] = {} # seq_num -> pub_id for messages in transit
-    self.sent_msg_recieved: dict[int,int] = {} # seq_num -> recieved
-    self.sent_msgs: deque[tuple[int,int,int]] = deque() # list (pub_time, pub_id, seq_num), assumes recieved in pub_time order
+    self.sent_msg_received: dict[int,int] = {} # seq_num -> received
+    self.sent_msgs: deque[tuple[int,int,int]] = deque() # list (pub_time, pub_id, seq_num), assumes received in pub_time order
 
   def add_msg(self, pub_time, pub_id, seq_num):
     # delete messages older than MAX_LATENCY
     while len(self.sent_msgs) > 0 and self.sent_msgs[0][0] + MAX_LATENCY_NS > pub_time:
-      if not self.sent_msg_recieved[self.sent_msgs[0][2]]:
-        print(f"WARNING - message never recieved: pub_time={self.sent_msgs[0][0]}, pub_id={self.sent_msgs[0][1]}, seq_num={self.sent_msgs[0][2]}")
+      if not self.sent_msg_received[self.sent_msgs[0][2]]:
+        print(f"WARNING - message never received: pub_time={self.sent_msgs[0][0]}, pub_id={self.sent_msgs[0][1]}, seq_num={self.sent_msgs[0][2]}")
       del self.sent_msg_pub_id[self.sent_msgs[0][2]]
-      del self.sent_msg_recieved[self.sent_msgs[0][2]]
+      del self.sent_msg_received[self.sent_msgs[0][2]]
       self.sent_msgs.popleft()
     self.sent_msg_pub_id[seq_num] = pub_id
-    self.sent_msg_recieved[seq_num] = False
+    self.sent_msg_received[seq_num] = False
     self.sent_msgs.append((pub_time, pub_id, seq_num))
 
   def find_msg_pub_id(self, seq_num):
@@ -65,7 +65,7 @@ class TopicState(EntityState):
     if pub_id is None:
       return None
     
-    self.sent_msg_recieved[seq_num] = True
+    self.sent_msg_received[seq_num] = True
     return pub_id
 
 class PortState:
@@ -102,7 +102,7 @@ class StateTracker:
     self.pub_map: dict[int,PubState] = {}
     self.sub_map: dict[int,PubState] = {}
     self.pair_map: dict[tuple[int,int],PubSubPair] = {}
-    self.anal_queue: deque[tuple[int,int]] = deque() # recieved messages that haven't been analyzed
+    self.anal_queue: deque[tuple[int,int]] = deque() # received messages that haven't been analyzed
     self.ui_graph = GraphUI()
 
   def set_time(self, time):
@@ -123,7 +123,7 @@ class StateTracker:
     self.get_topic(self.get_pub(pub_id).topic).add_msg(self.time, pub_id, seq_num)
     return msg
   
-  # figure out recieved msg's pub_id from sub_id, seq_num
+  # figure out received msg's pub_id from sub_id, seq_num
   def find_recv_msg_pub_id(self, sub_id, seq_num):
     return self.get_topic(self.get_sub(sub_id).topic).find_msg_pub_id(seq_num)
   
@@ -195,7 +195,7 @@ class StateTracker:
     topic = self.get_topic(topic_name)
     topic.outgoing.add(sub_id)
   
-  def add_recieved_msg(self, pub_id, seq_num):
+  def add_received_msg(self, pub_id, seq_num):
     pub = self.get_pub(pub_id)
     pub_id = pub.pub_id
     msg = self.get_msg(pub_id, seq_num)

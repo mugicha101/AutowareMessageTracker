@@ -1,4 +1,4 @@
-#include <tracker.hpp>
+#include <tracked.hpp>
 
 #include <chrono>
 #include <node_latency_interfaces/msg/detail/generic__struct.hpp>
@@ -44,7 +44,7 @@ using namespace node_latency_interfaces;
 
 std::pair<std::shared_ptr<rclcpp::Node>, std::shared_ptr<NodeTracker>> make_node(std::string name) {
     auto node = rclcpp::Node::make_shared(name);
-    auto node_tracker = std::make_shared<NodeTracker>(node);
+    auto node_tracker = std::make_shared<NodeTracker>(*node);
     return {node, node_tracker};
 }
 
@@ -68,15 +68,14 @@ std::pair<rclcpp::Subscription<msg::Generic>::SharedPtr, std::shared_ptr<SubTrac
 
 // LIDAR TOP
 void lidar_top() {
-    auto [lidar_top, lidar_top_tracker] = make_node("lidar_top");
-    auto [filter_top_pub, filter_top_pub_tracker] = add_pub(lidar_top, lidar_top_tracker, "perception/filter_top");
+    std::shared_ptr<TrackedNode> lidar_top = TrackedNode::make_shared("lidar_top");
+    auto filter_top_pub = lidar_top->create_publisher<msg::Generic>("perception/filter_top", 10);
     auto timer = lidar_top->create_wall_timer(
         500ms,
         [&]() {
             static int count;
             auto msg = filter_top_pub->borrow_loaned_message();
             msg.get().data = rclcpp::Clock(RCL_STEADY_TIME).now().nanoseconds();
-            filter_top_pub_tracker->track_publish(msg.get());
             std::cout << "PUBLISH " << (uint64_t)&msg.get() << " " << ++count << std::endl;
             filter_top_pub->publish(std::move(msg));
         }
@@ -96,7 +95,7 @@ void concatenate_data() {
     auto [filter_top_sub, filter_top_sub_tracker] = add_sub(
         concatenate_data, concatenate_data_tracker, "perception/filter_top",
         [&ts](auto sub_tracker, auto msg, auto &info) {
-            sub_tracker->track_recieve(*msg.get(), info);
+            sub_tracker->track_receive(*msg.get(), info);
             auto rmw_info = info.get_rmw_message_info();
             std::cout << "RECEIVE " << (uint64_t)(msg.get()) << " " << rmw_info.publication_sequence_number << std::endl;
             ts->push_back(rmw_info.received_timestamp - rmw_info.source_timestamp);
