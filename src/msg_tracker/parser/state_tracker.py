@@ -104,7 +104,6 @@ class StateTracker:
     self.pair_map: dict[tuple[int,int],PubSubPair] = {}
     self.anal_queue: deque[tuple[int,int]] = deque() # recieved messages that haven't been analyzed
     self.ui_graph = GraphUI()
-    self.ui_graph.run(use_thread=True)
 
   def set_time(self, time):
     assert(self.time <= time)
@@ -145,7 +144,7 @@ class StateTracker:
   def get_node(self, node_name):
     if node_name not in self.node_map:
       self.node_map[node_name] = NodeState(node_name)
-      self.ui_graph.set_node(node_name)
+      self.ui_graph.add_node(NodeType.NODE, node_name)
     return self.node_map[node_name]
   
   # get topic state (creates if none exists)

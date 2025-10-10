@@ -1,4 +1,4 @@
-#include "tracker.hpp"
+#include <tracker.hpp>
 
 #include <chrono>
 #include <node_latency_interfaces/msg/detail/generic__struct.hpp>
@@ -71,12 +71,11 @@ void lidar_top() {
     auto [lidar_top, lidar_top_tracker] = make_node("lidar_top");
     auto [filter_top_pub, filter_top_pub_tracker] = add_pub(lidar_top, lidar_top_tracker, "perception/filter_top");
     auto timer = lidar_top->create_wall_timer(
-        50ms,
+        500ms,
         [&]() {
             static int count;
             auto msg = filter_top_pub->borrow_loaned_message();
-            msg.get().header.stamp = rclcpp::Clock(RCL_STEADY_TIME).now();
-            msg.get().data = 0.0;
+            msg.get().data = rclcpp::Clock(RCL_STEADY_TIME).now().nanoseconds();
             filter_top_pub_tracker->track_publish(msg.get());
             std::cout << "PUBLISH " << (uint64_t)&msg.get() << " " << ++count << std::endl;
             filter_top_pub->publish(std::move(msg));
@@ -117,7 +116,7 @@ void concatenate_data() {
                 return acc + dev * dev;
             }) / (double)n);
             FILE* fp = std::fopen("latency.txt", "w");
-            std::fprintf(fp, "LATENCY STATS\ncount: %llu\nmin: %lluns\nmax: %lluns\nmean: %lluns\nmedian: %lluns\nstddev: %lluns\n", n, min_val, max_val, (uint64_t)round(mean), (uint64_t)round(median), (uint64_t)round(stddev));
+            std::fprintf(fp, "LATENCY STATS\ncount: %lu\nmin: %luns\nmax: %luns\nmean: %luns\nmedian: %luns\nstddev: %luns\n", n, min_val, max_val, (uint64_t)round(mean), (uint64_t)round(median), (uint64_t)round(stddev));
             std::fclose(fp);
         }
     );
@@ -130,6 +129,10 @@ void concatenate_data() {
     rclcpp::shutdown();
 }
 
+void obstacle_segmentation() {
+
+}
+
 int main(int argc, char * argv[]) {
     if (argc < 2) {
         std::cerr << "node_name parameter not specified" << std::endl;
@@ -137,11 +140,10 @@ int main(int argc, char * argv[]) {
     }
     rclcpp::init(argc, argv);
     std::string node_name = argv[1];
-    if (node_name == "lidar_top") {
-        lidar_top();
-    } else if (node_name == "concatenate_data") {
-        concatenate_data();
-    } else {
+    if (node_name == "lidar_top") lidar_top();
+    else if (node_name == "concatenate_data") concatenate_data();
+    else if (node_name == "obstacle_segmentation") obstacle_segmentation();
+    else {
         std::cerr << "Error - unknown node_name: " << node_name << std::endl;
         return -1;
     }

@@ -157,14 +157,50 @@ def setup_lttng():
     except (psutil.NoSuchProcess, psutil.AccessDenied):
       continue
 
+rosbridge_proc = None
+def launch_rosbridge_server():
+  print("[*] Launching Rosbridge Server...")
+  global rosbridge_proc
+  rosbridge_proc = subprocess.Popen(
+    ["ros2", "run", "rosbridge_server", "rosbridge_websocket", "--port", "9090"],
+    stdout=None,
+    stderr=None
+  )
+
+def cleanup_rosbridge_server():
+  global rosbridge_proc
+  if rosbridge_proc is None:
+    return
+  
+  if rosbridge_proc.poll() is None:
+    print("[*] Closing Rosbridge Server...")
+    rosbridge_proc.terminate()
+
+  rosbridge_proc = None
+  
+clean = False
+def cleanup():
+  global clean
+  if clean:
+    return
+  clean = True
+
+  cleanup_session(SESSION_NAME)
+  cleanup_rosbridge_server()
+
+atexit.register(cleanup)
+def sig_handler(sig, frame):
+  raise SystemExit
+signal.signal(signal.SIGINT, sig_handler)
+signal.signal(signal.SIGTERM, sig_handler)
 
 if __name__ == "__main__":
   try:
     setup_lttng()
     launch_mapping_node()
     create_lttng_session(SESSION_NAME, PROVIDER_NAME, TRACEPOINT_NAME)
+    launch_rosbridge_server()
     read_tracepoints()
-  except KeyboardInterrupt:
-    print("\n[*] Interrupted by user.")
-  finally:
-    cleanup_session(SESSION_NAME)
+  except SystemExit:
+    print("[!] Interrupt detected, stopping trace...")
+  cleanup()

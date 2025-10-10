@@ -10,6 +10,10 @@ import socket
 import psutil
 import getpass
 import datetime
+import atexit
+import sys
+import websocket
+from enum import Enum
 from rclpy.node import Node
 from std_msgs.msg import Empty
 from datetime import datetime
